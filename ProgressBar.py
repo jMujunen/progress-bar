@@ -2,14 +2,13 @@
 """A simple progress bar object."""
 
 import sys
+import time
 
 from ExecutionTimer import ExecutionTimer
 
 
 class ProgressBar(ExecutionTimer):
-    """
-
-    A simple progress bar object.
+    """A simple progress bar object.
 
     ### Attributes
     ----------
@@ -54,22 +53,42 @@ class ProgressBar(ExecutionTimer):
         if self.initial_value == -1:
             sys.stdout.write("[%s] %i%%" % (" " * 40, 0))
 
-    def increment(self, increment=1) -> None:
+    def increment(self, increment: int = 1) -> None:
         """Increment the current value of the progress bar by the given amount.
 
-        Parameters:
+        Parameters
         ----------
-            - `increment` (int): The amount to increment the current value by
+            increment: The amount to increment the current value by
         """
+        if self.start_time == 0:
+            self.start_time = time.time()
         try:
             self.value += increment
             self.progress = self.value / self.initial_value * 100
+
+            self.elapsed_time = time.time() - self.start_time
+            remaining_time = (
+                (self.elapsed_time / self.value) * (self.initial_value - self.value)
+                if self.value > 0
+                else None
+            )
+            transfer_speed = self.value / self.elapsed_time if self.elapsed_time > 0 else 0
+
+            # Estimate time to complete and tranfer speed
+            sys.stdout.write(
+                "\r[%s] %i%% (ETA: %.2fs/%.2fs) %.2f MBits/s"
+                % (
+                    "=" * int(self.progress / 2),
+                    self.progress,
+                    self.elapsed_time,
+                    remaining_time,
+                    8 * transfer_speed,
+                )cd
+            )
+            # sys.stdout.flush()
+
         except ZeroDivisionError:
             self.errors += 1
-        # output = f"[{self.progress:.1f}%]"
-        # sys.stdout.write("\r" + output.ljust(int(self.progress / 2), "=") + "[100.0%]")
-        # sys.stdout.flush()
-        sys.stdout.write("\r[%s] %i%%" % ("=" * (int(self.progress / 2)), self.progress))
         sys.stdout.flush()
         if self.value == self.initial_value:
             print()
@@ -93,10 +112,6 @@ class ProgressBar(ExecutionTimer):
         """Int representation."""
         return int(self.value)
 
-    def __str__(self) -> str:
-        """Show object string representation."""
-        return str(self.value)
-
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(initial_value={self.initial_value},\
 current_value={self.value}, errors={self.errors}, progress={self.progress})"
@@ -113,16 +128,12 @@ current_value={self.value}, errors={self.errors}, progress={self.progress})"
         self.value = self.initial_value
         self.update()
 
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.complete()
+        return super().__exit__(exc_type, exc_value, traceback)
 
-def main(progressbar: ProgressBar, error: bool = False) -> None:
-    try:
-        for _ in iter(input, ""):
-            progressbar.increment()
-            progressbar.update()
-    except EOFError:
-        pass
-    finally:
-        progressbar.complete()
+    def __enter__(self):
+        return super().__enter__()
 
 
 if __name__ == "__main__":
@@ -132,18 +143,6 @@ if __name__ == "__main__":
     if len(sys.argv) > 1:
         initial_value = int(sys.argv[1])
 
-    # if not sys.stdin.isatty():
-    # # Read the total number of iterations from stdin
-    # try:
-    #     initial_value = int(sys.stdin.readline().strip())
-    #     print(initial_value)
-    # except ValueError:
-    #     print(
-    #         "Invalid input. Please provide a valid integer for the total number of iterations."
-    #     )
-    #     sys.exit(1)
-    # else:
-    # initial_value = 0
     progress_bar = ProgressBar(initial_value)
     print(initial_value)
     if initial_value > 0:
