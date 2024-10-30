@@ -83,7 +83,7 @@ class ProgressBar(ExecutionTimer):
                     self.elapsed_time,
                     remaining_time,
                     8 * transfer_speed,
-                )cd
+                )
             )
             # sys.stdout.flush()
 
