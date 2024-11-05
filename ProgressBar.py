@@ -3,11 +3,18 @@
 
 import sys
 import time
+from enum import Enum
 
-from ExecutionTimer import ExecutionTimer
+
+class TimeUnits(Enum):
+    ms = 1e-3
+    seconds = 1
+    minutes = 60
+    hours = 60**2
+    days = 24 * 60**2
 
 
-class ProgressBar(ExecutionTimer):
+class ProgressBar:
     """A simple progress bar object.
 
     ### Attributes
@@ -32,10 +39,18 @@ class ProgressBar(ExecutionTimer):
     >>> with ProgressBar(len(some_job)) as progress:
             spam()
             progress.increment()
-    # [100.0%]==========================================[100.0%]
-    # Execution time: 5 seconds
 
+    Out[2]: [100.0%]==========================================[100.0%]
+    Out[2]: Execution time: 5 seconds
+
+    >>> rsync -auv /mnt/ssd/ /tmp/ | python3 -m ProgressBar $(find /mnt/ssd | wc -l)
+
+    [=] 2% (ETA: 2.99s/116.73s) 8.02 MBits/
     """
+
+    start_time: float = 0.0
+    end_time: float = 0.0
+    execution_time: float = 0.0
 
     def __init__(self, initial_value: int, print_on_exit=True) -> None:
         """Initialize a new instance of the class.
@@ -128,12 +143,46 @@ current_value={self.value}, errors={self.errors}, progress={self.progress})"
         self.value = self.initial_value
         self.update()
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
-        self.complete()
-        return super().__exit__(exc_type, exc_value, traceback)
-
     def __enter__(self):
-        return super().__enter__()
+        """Context manager method to start the execution timer."""
+        self.start_time = time.time()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> None:
+        self.end_time = time.time()
+        self.execution_time = self.end_time - self.start_time
+        if self.print_on_exit:
+            print(f"\n\033[34mExecution time: {self!s}\033[0m")
+
+    def __str__(self) -> str:
+        """Convert result from seconds to hours, minutes, seconds, and/or milliseconds."""
+        time_seconds = self.execution_time
+        template = "{minutes}{major_unit}{seconds} {minor_unit}"
+        minutes, seconds = divmod(time_seconds, TimeUnits.minutes.value)
+        for unit in TimeUnits:
+            if time_seconds < TimeUnits.seconds.value:
+                return template.format(
+                    minutes="",
+                    major_unit="",
+                    seconds=f"{time_seconds/TimeUnits.ms.value:.0f}",
+                    minor_unit=unit.name,
+                )
+            if unit.name == 'ms':
+                continue
+            if time_seconds < TimeUnits.minutes.value:
+                return template.format(
+                    minutes="", major_unit="", seconds=f"{seconds:.0f}", minor_unit=unit.name
+                )
+            minutes, seconds = divmod(self.execution_time, TimeUnits.minutes.value)
+            time_seconds /= TimeUnits.minutes.value
+
+        hours, minutes = divmod(time_seconds, TimeUnits.hours.value)
+        return template.format(
+            minutes=f"{hours:.0f} ",
+            major_unit="hours ",
+            seconds=f"{minutes:.0f}",
+            minor_unit="minutes",
+        )
 
 
 if __name__ == "__main__":
