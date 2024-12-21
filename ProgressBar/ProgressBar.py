@@ -1,8 +1,8 @@
-#!/usr/bin/env python3
 """A simple progress bar object."""
 
 import sys
 import time
+
 from enum import Enum
 
 
@@ -39,20 +39,27 @@ class ProgressBar:
     >>> with ProgressBar(len(some_job)) as progress:
             spam()
             progress.increment()
+    # [100.0%]==========================================[100.0%]
+    # Execution time: 5 seconds
 
-    Out[2]: [100.0%]==========================================[100.0%]
-    Out[2]: Execution time: 5 seconds
-
-    >>> rsync -auv /mnt/ssd/ /tmp/ | python3 -m ProgressBar $(find /mnt/ssd | wc -l)
-
-    [=] 2% (ETA: 2.99s/116.73s) 8.02 MBits/
     """
 
     start_time: float = 0.0
     end_time: float = 0.0
     execution_time: float = 0.0
+    initial_value: int
+    print_on_exit: bool
+    _value: int
+    progress: float
+    errors: int
+    remaining_time: float
+    elapsed_time: float
+    transfer_speed: float
+    last_print_time: float
 
-    def __init__(self, initial_value: int, print_on_exit=True) -> None:
+    def __init__(
+        self, initial_value: int, print_on_exit: bool = True, print_interval: float = 0.1
+    ) -> None:
         """Initialize a new instance of the class.
 
         Parameters
@@ -60,10 +67,12 @@ class ProgressBar:
         - `initial_value` : int
             The initial value of the progress bar. Defaults to 100.
         """
+        self.print_interval = print_interval
+        self.last_print_time = 0.0
         self.initial_value = initial_value
         self.print_on_exit = print_on_exit
         self._value = 0
-        self.progress = 0
+        self.progress = 0.0
         self.errors = 0
         if self.initial_value == -1:
             sys.stdout.write("[%s] %i%%" % (" " * 40, 0))
@@ -75,38 +84,44 @@ class ProgressBar:
         ----------
             increment: The amount to increment the current value by
         """
+        current_time: float
+        remaining_time: float
+        transfer_speed: float
+
         if self.start_time == 0:
             self.start_time = time.time()
         try:
-            self.value += increment
-            self.progress = self.value / self.initial_value * 100
+            self._value += increment
+            self.progress = self._value / self.initial_value * 100
 
-            self.elapsed_time = time.time() - self.start_time
-            remaining_time = (
-                (self.elapsed_time / self.value) * (self.initial_value - self.value)
-                if self.value > 0
-                else None
-            )
-            transfer_speed = self.value / self.elapsed_time if self.elapsed_time > 0 else 0
+            current_time = time.time()
+            if current_time - self.last_print_time > self.print_interval:
+                self.last_print_time = current_time
+                self.execution_time = time.time() - self.start_time
+                remaining_time = 0.0
+                if self._value > 0:
+                    remaining_time = (self.execution_time / self._value) * (
+                        self.initial_value - self._value
+                    )
+                transfer_speed = self._value / self.execution_time if self.execution_time > 0 else 0
 
-            # Estimate time to complete and tranfer speed
-            sys.stdout.write(
-                "\r[%s] %i%% (ETA: %.2fs/%.2fs) %.2f MBits/s"
-                % (
-                    "=" * int(self.progress / 2),
-                    self.progress,
-                    self.elapsed_time,
-                    remaining_time,
-                    8 * transfer_speed,
+                # Estimate time to complete and transfer speed
+                sys.stdout.write(
+                    "\r[%s] %i%% (ETA: %.2fs/%.2fs) %.2f MBits/s"
+                    % (
+                        "=" * int(self.progress / 2),
+                        self.progress,
+                        self.execution_time,
+                        remaining_time,
+                        8 * transfer_speed,
+                    )
                 )
-            )
-            # sys.stdout.flush()
-
+                sys.stdout.flush()
+            elif self.progress == self.initial_value:
+                self.complete()
+                return
         except ZeroDivisionError:
             self.errors += 1
-        sys.stdout.flush()
-        if self.value == self.initial_value:
-            print()
 
     @property
     def value(self) -> int:
@@ -128,12 +143,11 @@ class ProgressBar:
         return int(self.value)
 
     def __repr__(self) -> str:
-        return f"{self.__class__.__name__}(initial_value={self.initial_value},\
-current_value={self.value}, errors={self.errors}, progress={self.progress})"
+        return f"{self.__class__.__name__}(initial_value={self.initial_value}, current_value={self.value}, errors={self.errors}, progress={self.progress})"
 
     def update(self) -> None:
         """Force an update of the progress bar."""
-        self.progress = self.value
+        self.progress = float(self.value)
         sys.stdout.write("\r[%s] %i%%" % ("=" * (50), 100))
         sys.stdout.flush()
         print("\n")
@@ -142,47 +156,53 @@ current_value={self.value}, errors={self.errors}, progress={self.progress})"
         """Manually set the bar to complete."""
         self.value = self.initial_value
         self.update()
+        if self.print_on_exit == 1:
+            print(f"\n\033[34mExecution time: {self!s}\033[0m\n")
 
     def __enter__(self):
-        """Context manager method to start the execution timer."""
+        """Context manager method to start the timer."""
         self.start_time = time.time()
         return self
 
-    def __exit__(self, exc_type, exc_value, traceback) -> None:
+    def __exit__(self, exc_type, exc_value, traceback) -> bool:
         self.end_time = time.time()
         self.execution_time = self.end_time - self.start_time
-        if self.print_on_exit:
-            print(f"\n\033[34mExecution time: {self!s}\033[0m")
+        self.complete()
+        return exc_type is not None
 
     def __str__(self) -> str:
         """Convert result from seconds to hours, minutes, seconds, and/or milliseconds."""
-        time_seconds = self.execution_time
         template = "{minutes}{major_unit}{seconds} {minor_unit}"
-        minutes, seconds = divmod(time_seconds, TimeUnits.minutes.value)
+        time_seconds = self.execution_time
         for unit in TimeUnits:
             if time_seconds < TimeUnits.seconds.value:
                 return template.format(
                     minutes="",
                     major_unit="",
-                    seconds=f"{time_seconds/TimeUnits.ms.value:.0f}",
-                    minor_unit=unit.name,
+                    seconds=f"{time_seconds / TimeUnits.ms.value:.0f}",
+                    minor_unit=TimeUnits.ms.name,
                 )
-            if unit.name == 'ms':
+            if unit.name == "ms":
                 continue
+            time_seconds /= unit.value
             if time_seconds < TimeUnits.minutes.value:
                 return template.format(
-                    minutes="", major_unit="", seconds=f"{seconds:.0f}", minor_unit=unit.name
+                    minutes="",
+                    major_unit="",
+                    seconds=f"{time_seconds:.2f}",
+                    minor_unit=unit.name,
                 )
-            minutes, seconds = divmod(self.execution_time, TimeUnits.minutes.value)
+            if time_seconds < TimeUnits.hours.value:
+                return template.format(
+                    minutes="",
+                    major_unit="",
+                    seconds=f"{time_seconds:.0f}",
+                    minor_unit=unit.name,
+                )
+
             time_seconds /= TimeUnits.minutes.value
 
-        hours, minutes = divmod(time_seconds, TimeUnits.hours.value)
-        return template.format(
-            minutes=f"{hours:.0f} ",
-            major_unit="hours ",
-            seconds=f"{minutes:.0f}",
-            minor_unit="minutes",
-        )
+        return f"{time_seconds / 60 / 24:.2f} {TimeUnits.days.name.lower()}"
 
 
 if __name__ == "__main__":
