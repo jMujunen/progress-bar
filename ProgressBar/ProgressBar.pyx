@@ -1,10 +1,11 @@
+#cython: language_level=3
+"""A simple progress bar object."""
 import sys
 import time
 from enum import Enum
 from typing import Optional
-
+cimport cython
 from libc.math cimport fabs
-
 class TimeUnits(Enum):
     ms = 1e-3
     seconds = 1
@@ -39,8 +40,8 @@ cdef class ProgressBar:
         self.last_print_time = 0.0 # type: ignore
         if self.num_jobs == -1:
             sys.stdout.write("[%s] %i%%" % (" " * 40, 0))
-
-    cpdef void increment(self, int increment=1):
+    @cython.inline
+    cpdef void increment(self, unsigned short int increment=1):
         """Increment the current value of the progress bar by the given amount."""
         cdef double current_time
         cdef double remaining_time
