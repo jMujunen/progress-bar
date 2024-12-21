@@ -19,7 +19,7 @@ cdef class ProgressBar:
     cdef public double start_time
     cdef public double end_time
     cdef public double execution_time
-    cdef public int initial_value
+    cdef public int num_jobs
     cdef public int _value
     cdef public int progress
     cdef public int errors
@@ -28,17 +28,16 @@ cdef class ProgressBar:
     cdef public double print_interval
 
     def __init__(
-        self, int initial_value, bint print_on_exit=1, double print_interval=0.1 # type: ignore
+        self, unsigned int num_jobs, bint print_on_exit=1, double print_interval=0.1 # type: ignore
     ) -> None:
-        """Initialize a new instance of the class."""
-        self.initial_value = initial_value
+        self.num_jobs = num_jobs
         self.print_on_exit = print_on_exit
         self.print_interval = print_interval
         self._value = 0
         self.progress = 0
         self.errors = 0
         self.last_print_time = 0.0 # type: ignore
-        if self.initial_value == -1:
+        if self.num_jobs == -1:
             sys.stdout.write("[%s] %i%%" % (" " * 40, 0))
 
     cpdef void increment(self, int increment=1):
@@ -51,7 +50,7 @@ cdef class ProgressBar:
             self.start_time = time.time() # type: ignore
         try:
             self._value += increment
-            self.progress = <int>(self._value / self.initial_value * 100)
+            self.progress = <int>(self._value / self.num_jobs * 100)
 
             current_time = time.time() # type: ignore
             if current_time - self.last_print_time > self.print_interval:
@@ -61,7 +60,7 @@ cdef class ProgressBar:
                 if self._value > 0:
                     remaining_time = (
                         (self.execution_time / self._value) # type: ignore
-                        * (self.initial_value - self._value)
+                        * (self.num_jobs - self._value)
                     )
                 transfer_speed = (
                     self._value / self.execution_time if self.execution_time > 0 else 0 # type: ignore
@@ -79,7 +78,8 @@ cdef class ProgressBar:
                     )
                 )
                 sys.stdout.flush()
-
+            elif self.progress == self.num_jobs:
+                self.complete()
         except ZeroDivisionError:
             self.errors += 1
 
@@ -102,8 +102,10 @@ cdef class ProgressBar:
 
     cpdef void complete(self):
         """Manually set the bar to complete."""
-        self._value = self.initial_value
+        self._value = self.num_jobs
         self.update()
+        if self.print_on_exit == 1:
+            print(f"\n\033[34mExecution time: {self!s}\033[0m\n")
 
     def __enter__(self):
         """Context manager method to start the execution timer."""
@@ -113,8 +115,7 @@ cdef class ProgressBar:
     def __exit__(self, exc_type, exc_value, traceback) -> Optional[bool]:
         self.end_time = time.time() # type: ignore
         self.execution_time = self.end_time - self.start_time # type: ignore
-        if self.print_on_exit == 1:
-            print(f"\n\033[34mExecution time: {self!s}\033[0m")
+        self.complete()
         return exc_type is not None
 
     def __str__(self) -> str:
@@ -141,14 +142,47 @@ cdef class ProgressBar:
             time_seconds = time_seconds / unit.value
             if time_seconds < TimeUnits.minutes.value:
                 return template.format(
-                    minutes="", major_unit="", seconds=f"{seconds:.0f}", minor_unit=unit.name
+                    minutes="", major_unit="", seconds=f"{seconds:.2f}", minor_unit=unit.name,
                 )
             if time_seconds < TimeUnits.hours.value:
                 return template.format(
-                    minutes="", major_unit="", seconds=f"{seconds:.0f}", minor_unit=unit.name
+                    minutes="", major_unit="", seconds=f"{seconds:.0f}", minor_unit=unit.name,
                 )
             minutes = fabs(time_seconds / TimeUnits.hours.value)
             seconds = fabs(time_seconds % TimeUnits.hours.value)
 
         hours = fabs(time_seconds)
         return template.format(minutes=f"{hours:.0f} ", major_unit="", seconds=f"{minutes:.0f}",minor_unit="minutes")
+
+
+cdef void print_help():
+    """Print help message."""
+    print("Usage:\n\tcommand | python -m ProgressBar <num_jobs>")
+    print('Example:\n\tfind . -exec stat --format="%s %n"| python -m ProgressBar $(find . | wc -l)')
+    sys.exit(1)
+if __name__ == "__main__":
+    initial_value = 0
+    # Parse stdin
+    if '-h' in sys.argv[1]:
+        print_help()
+
+    if len(sys.argv) > 1:
+        initial_value = int(sys.argv[1])
+
+    # Below code is for supporting piping input from stdin.
+    progress_bar = ProgressBar(initial_value)
+    print(initial_value, file=sys.stderr)
+    if initial_value > 0:
+        with progress_bar as pb:
+            try:
+                for _ in iter(input, ""):
+                    pb.increment()
+            except KeyboardInterrupt:
+                pb.complete()
+                sys.exit(0)
+            except EOFError:
+                pass
+            finally:
+                sys.exit(0)
+    else:
+        print_help()

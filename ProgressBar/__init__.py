@@ -1,3 +1,3 @@
-from .ProgressBar import ProgressBar
+from .Progress import ProgressBar
 
 __all__ = ['ProgressBar']
