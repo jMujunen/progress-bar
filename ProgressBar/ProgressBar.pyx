@@ -16,20 +16,8 @@ class TimeUnits(Enum):
 
 cdef class ProgressBar:
     """A simple progress bar object."""
-
-    cdef public double start_time
-    cdef public double end_time
-    cdef public double execution_time
-    cdef public int num_jobs
-    cdef public int _value
-    cdef public int progress
-    cdef public int errors
-    cdef public double last_print_time
-    cdef public bint print_on_exit
-    cdef public double print_interval
-
     def __init__(
-        self, unsigned int num_jobs, bint print_on_exit=1, double print_interval=0.1 # type: ignore
+        self, unsigned long int num_jobs, bint print_on_exit=1, double print_interval=0.1 # type: ignore
     ) -> None:
         self.num_jobs = num_jobs
         self.print_on_exit = print_on_exit
@@ -40,7 +28,6 @@ cdef class ProgressBar:
         self.last_print_time = 0.0 # type: ignore
         if self.num_jobs == -1:
             sys.stdout.write("[%s] %i%%" % (" " * 40, 0))
-    @cython.inline
     cpdef void increment(self, unsigned short int increment=1):
         """Increment the current value of the progress bar by the given amount."""
         cdef double current_time
