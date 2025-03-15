@@ -5,6 +5,8 @@ import time
 from enum import Enum
 from typing import Optional
 cimport cython
+from cpython cimport bool
+
 from libc.math cimport fabs
 class TimeUnits(Enum):
     ms = 1e-3
@@ -17,8 +19,19 @@ class TimeUnits(Enum):
 cdef class ProgressBar:
     """A simple progress bar object."""
     def __init__(
-        self, unsigned long int num_jobs, bint print_on_exit=1, double print_interval=0.1 # type: ignore
+        self, unsigned long int num_jobs, str title='', bool print_on_exit=True, double print_interval=0.1 # type: ignore
     ) -> None:
+        """Initialize a new progress bar object.
+
+        Parameters
+        ----------
+            - num_jobs (int): The number of jobs to be completed.
+            - title (str): A string representing the name of the job.
+            - print_on_exit (bool): Whether or not to print the final result after all tasks are completed.
+            - print_interval (double): The interval (in seconds) at which to update the progress bar.
+
+        """
+        self.title = title.strip()
         self.num_jobs = num_jobs
         self.print_on_exit = print_on_exit
         self.print_interval = print_interval
@@ -26,48 +39,63 @@ cdef class ProgressBar:
         self.progress = 0
         self.errors = 0
         self.last_print_time = 0.0 # type: ignore
+        self.last_print_time = time.time() # type: ignore
+        print(f'\033[1;4m{self.title.center(75)}\033[0m') if self.title else None
         if self.num_jobs == -1:
             sys.stdout.write("[%s] %i%%" % (" " * 40, 0))
+
     cpdef void increment(self, unsigned short int increment=1):
         """Increment the current value of the progress bar by the given amount."""
         cdef double current_time
         cdef double remaining_time
-        cdef double transfer_speed
 
         if self.start_time == 0:
             self.start_time = time.time() # type: ignore
         try:
             self._value += increment
             self.progress = <int>(self._value / self.num_jobs * 100)
+            current_time = time.time()
 
-            current_time = time.time() # type: ignore
             if current_time - self.last_print_time > self.print_interval:
                 self.last_print_time = current_time
-                self.execution_time = time.time() - self.start_time # type: ignore
-                remaining_time = 0 # type: ignore
+
+                self.last_print_time = current_time
+                self.execution_time = time.time() - self.start_time
+                remaining_time = 0
+
                 if self._value > 0:
                     remaining_time = (
                         (self.execution_time / self._value) # type: ignore
                         * (self.num_jobs - self._value)
                     )
-                transfer_speed = (
-                    self._value / self.execution_time if self.execution_time > 0 else 0 # type: ignore
-                )
+
+                self.throughput = self._value / self.execution_time if self.execution_time > 0 else 0
 
                 # Estimate time to complete and transfer speed
                 sys.stdout.write(
-                    "\r[%s] %i%% (ETA: %.2fs/%.2fs) %.2f MBits/s"
+                    "\r[%.1f iter/s] [%s] %i%% (ETA: %.1fs/%.1fs)"
                     % (
+                        self.throughput,
                         "=" * int(self.progress / 2),
                         self.progress,
-                        self.execution_time,
                         remaining_time,
-                        8 * transfer_speed,
+                        self.execution_time,
                     )
                 )
                 sys.stdout.flush()
-            elif self.progress == self.num_jobs:
-                self.complete()
+
+            if self._value == self.num_jobs:
+                sys.stdout.write(
+                    "\r[%.1f iter/s] [%s] 100%% %s"
+                    % (
+                        self.throughput,
+                        "=" * int(self.progress / 2),
+                        " " * 20
+                    )
+                )
+                sys.stdout.flush()
+                print('\n')
+
         except ZeroDivisionError:
             self.errors += 1
 
@@ -81,20 +109,14 @@ cdef class ProgressBar:
         """Value setter."""
         self._value = new_value
 
-    cpdef void update(self):
-        """Force an update of the progress bar."""
-        self.progress = self._value
-        sys.stdout.write("\r[%s] %i%%" % ("=" * (50), 100))
+    def complete(self):
+        """Complete the progress bar."""
+        sys.stdout.write("\r[%s] 100%%\n" % ("=" * int(50)))
         sys.stdout.flush()
-        print("\n")
+
     def __repr__(self) -> str:
         return f"{self.__class__.__name__}(initial_value={self.num_jobs}, current_value={self.value}, errors={self.errors}, progress={self.progress})"
-    cpdef void complete(self):
-        """Manually set the bar to complete."""
-        self._value = self.num_jobs
-        self.update()
-        if self.print_on_exit == 1:
-            print(f"\n\033[34mExecution time: {self!s}\033[0m\n")
+
 
     def __enter__(self):
         """Context manager method to start the execution timer."""
@@ -104,7 +126,9 @@ cdef class ProgressBar:
     def __exit__(self, exc_type, exc_value, traceback) -> Optional[bool]:
         self.end_time = time.time() # type: ignore
         self.execution_time = self.end_time - self.start_time # type: ignore
-        self.complete()
+        if self.print_on_exit is True:
+            print(f"\n\033[34mExecution time: {self!s}\033[0m\n")
+
         return exc_type is not None
 
     def __str__(self) -> str:
