@@ -8,6 +8,7 @@ cimport cython
 from cpython cimport bool
 
 from libc.math cimport fabs
+
 class TimeUnits(Enum):
     ms = 1e-3
     seconds = 1
@@ -19,7 +20,7 @@ class TimeUnits(Enum):
 cdef class ProgressBar:
     """A simple progress bar object."""
     def __init__(
-        self, unsigned long int num_jobs, str title='', bool print_on_exit=True, double print_interval=0.1 # type: ignore
+        self, unsigned long int num_jobs, str title='', bool print_on_exit=True, double print_interval=0.1
     ) -> None:
         """Initialize a new progress bar object.
 
@@ -44,13 +45,13 @@ cdef class ProgressBar:
         if self.num_jobs == -1:
             sys.stdout.write("[%s] %i%%" % (" " * 40, 0))
 
-    cpdef void increment(self, unsigned short int increment=1):
+    def increment(self, unsigned int increment=1):
         """Increment the current value of the progress bar by the given amount."""
         cdef double current_time
         cdef double remaining_time
 
         if self.start_time == 0:
-            self.start_time = time.time() # type: ignore
+            self.start_time = time.time()
         try:
             self._value += increment
             self.progress = <int>(self._value / self.num_jobs * 100)
@@ -65,11 +66,11 @@ cdef class ProgressBar:
 
                 if self._value > 0:
                     remaining_time = (
-                        (self.execution_time / self._value) # type: ignore
-                        * (self.num_jobs - self._value)
+                        (self.execution_time / self._value) * (self.num_jobs - self._value)
                     )
 
-                self.throughput = self._value / self.execution_time if self.execution_time > 0 else 0
+                self.throughput = (self._value / self.execution_time
+                if self.execution_time > 0 else 0)
 
                 # Estimate time to complete and transfer speed
                 sys.stdout.write(
@@ -168,12 +169,13 @@ cdef class ProgressBar:
         return template.format(minutes=f"{hours:.0f} ", major_unit="", seconds=f"{minutes:.0f}",minor_unit="minutes")
 
 
-cdef void print_help():
+def print_help():
     """Print help message."""
     print("Usage:\n\tcommand | python -m ProgressBar <num_jobs>")
     print('Example:\n\tfind . -exec stat --format="%s %n"| python -m ProgressBar $(find . | wc -l)')
     sys.exit(1)
-if __name__ == "__main__":
+
+def main():
     initial_value = 0
     # Parse stdin
     if '-h' in sys.argv[1]:
@@ -199,3 +201,6 @@ if __name__ == "__main__":
                 sys.exit(0)
     else:
         print_help()
+
+if __name__ == "__main__":
+    main()

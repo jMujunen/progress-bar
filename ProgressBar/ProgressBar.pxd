@@ -15,4 +15,3 @@ cdef class ProgressBar:
     cdef double print_interval
     cdef str title
     cdef double throughput
-    cpdef void increment(self, unsigned short int increment=?)
