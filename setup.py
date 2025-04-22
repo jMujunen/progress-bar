@@ -9,4 +9,9 @@ ext_modules = [
     )
 ]
 
-setup(name="ProgressBar", version="0.1.0", ext_modules=cythonize(ext_modules))
+setup(
+    name="ProgressBar",
+    version="0.1.0",
+    packages=["ProgressBar"],
+    ext_modules=cythonize(ext_modules),
+)
