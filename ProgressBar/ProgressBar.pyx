@@ -3,7 +3,7 @@
 import sys
 import time
 from enum import Enum
-from typing import Optional
+from typing import Optional, Iterable
 cimport cython
 from cpython cimport bool
 
@@ -20,7 +20,7 @@ class TimeUnits(Enum):
 cdef class ProgressBar:
     """A simple progress bar object."""
     def __init__(
-        self, unsigned long int num_jobs, str title='', bool print_on_exit=True, double print_interval=0.1
+        self, jobs: int | Iterable, str title='', bool print_on_exit=True, double print_interval=0.1
     ) -> None:
         """Initialize a new progress bar object.
 
@@ -33,7 +33,16 @@ cdef class ProgressBar:
 
         """
         self.title = title.strip()
+        if isinstance(jobs, int):
+            num_jobs = jobs
+        elif isinstance(jobs, Iterable):
+            num_jobs = len(list(jobs))
+            self.sequence = list(jobs)
+        else:
+            raise TypeError(f'Expected int or iterable, got {type(jobs)}')
+        self._index = 0
         self.num_jobs = num_jobs
+        self.start_time = time.time() # type: ignore
         self.print_on_exit = print_on_exit
         self.print_interval = print_interval
         self._value = 0
@@ -44,6 +53,19 @@ cdef class ProgressBar:
         print(f'\033[1;4m{self.title.center(75)}\033[0m') if self.title else None
         if self.num_jobs == -1:
             sys.stdout.write("[%s] %i%%" % (" " * 40, 0))
+
+    def __iter__(self) -> 'ProgressBar':
+        """Return an iterator over the progress bar."""
+        return self
+    def __next__(self) -> 'ProgressBar':
+        """Return the next value of the progress bar."""
+        if self._index < len(self.sequence):
+            item = self.sequence[self._index]
+            self._index += 1
+            self.increment()
+            return item
+        else:
+            raise StopIteration
 
     def increment(self, unsigned int increment=1):
         """Increment the current value of the progress bar by the given amount."""
